@@ -1,3 +1,3 @@
 module github.com/ya-lobur/go-url-shortener
 
-go 1.27.4
+go 1.27.0
