@@ -7,15 +7,19 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
-	"github.com/ya-lobur/go-url-shortener/internal/repository"
 )
 
-type Handler struct {
-	storage *repository.MemoryStorage
+// Storage provides the URL mappings used by the HTTP handlers.
+type Storage interface {
+	Save(originalURL string) string
+	Get(id string) (string, bool)
 }
 
-func New(storage *repository.MemoryStorage) *Handler {
+type Handler struct {
+	storage Storage
+}
+
+func New(storage Storage) *Handler {
 	return &Handler{storage: storage}
 }
 
