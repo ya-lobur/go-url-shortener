@@ -19,10 +19,11 @@ type Storage interface {
 
 type Handler struct {
 	storage Storage
+	baseURL string
 }
 
-func New(storage Storage) http.Handler {
-	h := &Handler{storage: storage}
+func New(storage Storage, baseURL string) http.Handler {
+	h := &Handler{storage: storage, baseURL: baseURL}
 	router := chi.NewRouter()
 	router.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -65,7 +66,7 @@ func (h *Handler) shorten(w http.ResponseWriter, r *http.Request) {
 	id := h.storage.Save(originalURL)
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusCreated)
-	if _, err := io.WriteString(w, "http://localhost:8080/"+id); err != nil {
+	if _, err := io.WriteString(w, h.baseURL+"/"+id); err != nil {
 		log.Printf("write shortened URL: %v", err)
 	}
 }

@@ -4,17 +4,19 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/ya-lobur/go-url-shortener/internal/config"
 	"github.com/ya-lobur/go-url-shortener/internal/handler"
 	"github.com/ya-lobur/go-url-shortener/internal/repository"
 )
 
 func main() {
-	if err := run(); err != nil {
+	cfg := config.ParseFlags()
+	if err := run(cfg); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run() error {
+func run(cfg config.Config) error {
 	storage := repository.NewMemoryStorage()
-	return http.ListenAndServe("localhost:8080", handler.New(storage))
+	return http.ListenAndServe(cfg.RunAddr, handler.New(storage, cfg.BaseURL))
 }

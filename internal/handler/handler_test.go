@@ -37,11 +37,14 @@ func TestHandler_Shorten(t *testing.T) {
 		name        string
 		original    string
 		contentType string
+		baseURL     string
+		wantURL     string
 	}{
-		{"http", "http://example.com/path", "text/plain"},
-		{"https", "https://practicum.yandex.ru/", "text/plain"},
-		{"query", "https://example.com/search?q=go&lang=en+us", "text/plain"},
-		{"charset", "https://example.com/", "text/plain; charset=utf-8"},
+		{"http", "http://example.com/path", "text/plain", "http://localhost:8080", "http://localhost:8080/abc123"},
+		{"https", "https://practicum.yandex.ru/", "text/plain", "http://localhost:8080", "http://localhost:8080/abc123"},
+		{"query", "https://example.com/search?q=go&lang=en+us", "text/plain", "http://localhost:8080", "http://localhost:8080/abc123"},
+		{"charset", "https://example.com/", "text/plain; charset=utf-8", "http://localhost:8080", "http://localhost:8080/abc123"},
+		{"custom_base_url", "https://example.com/", "text/plain", "https://short.example:8443", "https://short.example:8443/abc123"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -50,7 +53,7 @@ func TestHandler_Shorten(t *testing.T) {
 			request.Header.Set("Content-Type", tt.contentType)
 			recorder := httptest.NewRecorder()
 
-			handler.New(storage).ServeHTTP(recorder, request)
+			handler.New(storage, tt.baseURL).ServeHTTP(recorder, request)
 
 			response := recorder.Result()
 			defer response.Body.Close()
@@ -58,7 +61,7 @@ func TestHandler_Shorten(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, http.StatusCreated, response.StatusCode)
 			assert.Equal(t, "text/plain", response.Header.Get("Content-Type"))
-			assert.Equal(t, "http://localhost:8080/abc123", string(body))
+			assert.Equal(t, tt.wantURL, string(body))
 			assert.Equal(t, []string{tt.original}, storage.saved)
 			assert.Empty(t, storage.lookedUp)
 		})
@@ -93,7 +96,7 @@ func TestHandler_InvalidShorten(t *testing.T) {
 			}
 			recorder := httptest.NewRecorder()
 
-			handler.New(storage).ServeHTTP(recorder, request)
+			handler.New(storage, "http://localhost:8080").ServeHTTP(recorder, request)
 
 			assertBadRequest(t, recorder)
 			assert.Empty(t, storage.saved)
@@ -117,7 +120,7 @@ func TestHandler_BodyReadError(t *testing.T) {
 	request.Body = failingBody{}
 	recorder := httptest.NewRecorder()
 
-	handler.New(storage).ServeHTTP(recorder, request)
+	handler.New(storage, "http://localhost:8080").ServeHTTP(recorder, request)
 
 	assertBadRequest(t, recorder)
 	assert.Empty(t, storage.saved)
@@ -141,7 +144,7 @@ func TestHandler_Redirect(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, tt.path, nil)
 			recorder := httptest.NewRecorder()
 
-			handler.New(storage).ServeHTTP(recorder, request)
+			handler.New(storage, "http://localhost:8080").ServeHTTP(recorder, request)
 
 			response := recorder.Result()
 			defer response.Body.Close()
@@ -161,7 +164,7 @@ func TestHandler_UnknownID(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/unknown", nil)
 	recorder := httptest.NewRecorder()
 
-	handler.New(storage).ServeHTTP(recorder, request)
+	handler.New(storage, "http://localhost:8080").ServeHTTP(recorder, request)
 
 	assertBadRequest(t, recorder)
 	assert.Equal(t, []string{"unknown"}, storage.lookedUp)
@@ -194,7 +197,7 @@ func TestHandler_InvalidRoute(t *testing.T) {
 			request.Header.Set("Content-Type", "text/plain")
 			recorder := httptest.NewRecorder()
 
-			handler.New(storage).ServeHTTP(recorder, request)
+			handler.New(storage, "http://localhost:8080").ServeHTTP(recorder, request)
 
 			assertBadRequest(t, recorder)
 			assert.Equal(t, "invalid method or path\n", recorder.Body.String())
