@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/go-chi/chi/v5"
 )
 
 // Storage provides the URL mappings used by the HTTP handlers.
@@ -19,19 +21,25 @@ type Handler struct {
 	storage Storage
 }
 
-func New(storage Storage) *Handler {
-	return &Handler{storage: storage}
+func New(storage Storage) http.Handler {
+	h := &Handler{storage: storage}
+	router := chi.NewRouter()
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Preserve routing by the decoded path used before switching to chi.
+			chi.RouteContext(r.Context()).RoutePath = r.URL.Path
+			next.ServeHTTP(w, r)
+		})
+	})
+	router.Post("/", h.shorten)
+	router.Get("/{id}", h.redirect)
+	router.NotFound(invalidRoute)
+	router.MethodNotAllowed(invalidRoute)
+	return router
 }
 
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	switch {
-	case r.Method == http.MethodPost && r.URL.Path == "/":
-		h.shorten(w, r)
-	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/") && len(r.URL.Path) > 1 && !strings.Contains(r.URL.Path[1:], "/"):
-		h.redirect(w, r)
-	default:
-		http.Error(w, "invalid method or path", http.StatusBadRequest)
-	}
+func invalidRoute(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "invalid method or path", http.StatusBadRequest)
 }
 
 func (h *Handler) shorten(w http.ResponseWriter, r *http.Request) {
@@ -63,7 +71,7 @@ func (h *Handler) shorten(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) redirect(w http.ResponseWriter, r *http.Request) {
-	originalURL, ok := h.storage.Get(strings.TrimPrefix(r.URL.Path, "/"))
+	originalURL, ok := h.storage.Get(chi.URLParam(r, "id"))
 	if !ok {
 		http.Error(w, "unknown URL identifier", http.StatusBadRequest)
 		return

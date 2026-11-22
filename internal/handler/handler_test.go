@@ -127,15 +127,18 @@ func TestHandler_BodyReadError(t *testing.T) {
 func TestHandler_Redirect(t *testing.T) {
 	tests := []struct {
 		name     string
+		path     string
 		original string
 	}{
-		{"http", "http://example.com/path"},
-		{"https_query", "https://example.com/search?q=go&lang=en+us"},
+		{"http", "/abc123", "http://example.com/path"},
+		{"https_query", "/abc123", "https://example.com/search?q=go&lang=en+us"},
+		{"query_in_request", "/abc123?preview=true", "https://example.com/"},
+		{"escaped_id", "/%61bc123", "https://example.com/"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			storage := &storageStub{original: tt.original, found: true}
-			request := httptest.NewRequest(http.MethodGet, "/abc123", nil)
+			request := httptest.NewRequest(http.MethodGet, tt.path, nil)
 			recorder := httptest.NewRecorder()
 
 			handler.New(storage).ServeHTTP(recorder, request)
@@ -174,12 +177,15 @@ func TestHandler_InvalidRoute(t *testing.T) {
 		{http.MethodPost, "/abc123"},
 		{http.MethodGet, "/a/b"},
 		{http.MethodGet, "/abc123/"},
+		{http.MethodGet, "/a%2Fb"},
+		{http.MethodGet, "//abc123"},
 		{http.MethodPost, "/a/b"},
 		{http.MethodPut, "/"},
 		{http.MethodDelete, "/abc123"},
 		{http.MethodPatch, "/"},
 		{http.MethodHead, "/abc123"},
 		{http.MethodOptions, "/"},
+		{http.MethodTrace, "/abc123"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
@@ -191,6 +197,8 @@ func TestHandler_InvalidRoute(t *testing.T) {
 			handler.New(storage).ServeHTTP(recorder, request)
 
 			assertBadRequest(t, recorder)
+			assert.Equal(t, "invalid method or path\n", recorder.Body.String())
+			assert.Empty(t, recorder.Header().Get("Allow"))
 			assert.Empty(t, storage.saved)
 			assert.Empty(t, storage.lookedUp)
 		})
