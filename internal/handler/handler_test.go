@@ -47,6 +47,8 @@ func TestHandler_Shorten(t *testing.T) {
 		{"https", "https://practicum.yandex.ru/", "text/plain", "http://localhost:8080", "http://localhost:8080/abc123"},
 		{"query", "https://example.com/search?q=go&lang=en+us", "text/plain", "http://localhost:8080", "http://localhost:8080/abc123"},
 		{"charset", "https://example.com/", "text/plain; charset=utf-8", "http://localhost:8080", "http://localhost:8080/abc123"},
+		{"trailing_slash", "https://example.com/", "text/plain", "https://short.example/", "https://short.example/abc123"},
+		{"trailing_slashes_with_prefix", "https://example.com/", "text/plain", "https://short.example/links///", "https://short.example/links/abc123"},
 		{"custom_base_url", "https://example.com/", "text/plain", "https://short.example:8443", "https://short.example:8443/abc123"},
 	}
 	for _, tt := range tests {

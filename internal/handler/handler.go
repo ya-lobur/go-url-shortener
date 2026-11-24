@@ -26,7 +26,7 @@ type Handler struct {
 }
 
 func New(service Service, cfg config.HandlerConfig) http.Handler {
-	h := &Handler{service: service, baseURL: cfg.BaseURL}
+	h := &Handler{service: service, baseURL: strings.TrimRight(cfg.BaseURL, "/")}
 	router := chi.NewRouter()
 	router.Post("/", h.shorten)
 	router.Get("/{id}", h.redirect)
