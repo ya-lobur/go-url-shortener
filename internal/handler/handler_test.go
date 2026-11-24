@@ -235,3 +235,19 @@ func TestHandler_ServiceError(t *testing.T) {
 		})
 	}
 }
+
+func TestHandler_PercentID(t *testing.T) {
+	for _, tt := range []struct{ path, id string }{
+		{"/%25", "%"},
+		{"/%2561bc123", "%61bc123"},
+		{"/%2561%62c123", "%61bc123"},
+	} {
+		t.Run(tt.path, func(t *testing.T) {
+			svc := &serviceStub{original: "https://example.com/", found: true}
+			recorder := httptest.NewRecorder()
+			handler.New(svc, config.HandlerConfig{BaseURL: "http://localhost:8080"}).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, tt.path, nil))
+			require.Equal(t, http.StatusTemporaryRedirect, recorder.Code)
+			require.Equal(t, []string{tt.id}, svc.lookedUp)
+		})
+	}
+}

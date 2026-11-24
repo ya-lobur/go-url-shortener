@@ -6,6 +6,8 @@ import (
 	"log"
 	"mime"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/ya-lobur/go-url-shortener/internal/config"
@@ -26,13 +28,6 @@ type Handler struct {
 func New(service Service, cfg config.HandlerConfig) http.Handler {
 	h := &Handler{service: service, baseURL: cfg.BaseURL}
 	router := chi.NewRouter()
-	router.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Preserve routing by the decoded path used before switching to chi.
-			chi.RouteContext(r.Context()).RoutePath = r.URL.Path
-			next.ServeHTTP(w, r)
-		})
-	})
 	router.Post("/", h.shorten)
 	router.Get("/{id}", h.redirect)
 	router.NotFound(invalidRoute)
@@ -76,7 +71,21 @@ func (h *Handler) shorten(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) redirect(w http.ResponseWriter, r *http.Request) {
-	originalURL, ok := h.service.Resolve(chi.URLParam(r, "id"))
+	id := chi.URLParam(r, "id")
+	// chi routes by RawPath when present; otherwise the parameter is already decoded.
+	if r.URL.RawPath != "" {
+		decoded, err := url.PathUnescape(id)
+		if err != nil {
+			invalidRoute(w, r)
+			return
+		}
+		id = decoded
+	}
+	if strings.Contains(id, "/") {
+		invalidRoute(w, r)
+		return
+	}
+	originalURL, ok := h.service.Resolve(id)
 	if !ok {
 		http.Error(w, "unknown URL identifier", http.StatusBadRequest)
 		return
