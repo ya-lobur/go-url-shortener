@@ -1,29 +1,28 @@
 package repository
 
 import (
-	"strconv"
 	"sync"
 )
 
 // MemoryStorage keeps URL mappings for the lifetime of the process.
 type MemoryStorage struct {
-	mu     sync.Mutex
-	urls   map[string]string
-	nextID uint64
+	mu   sync.Mutex
+	urls map[string]string
 }
 
 func NewMemoryStorage() *MemoryStorage {
 	return &MemoryStorage{urls: make(map[string]string)}
 }
 
-func (s *MemoryStorage) Save(originalURL string) string {
+func (s *MemoryStorage) Save(id, originalURL string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.nextID++
-	id := strconv.FormatUint(s.nextID, 36)
+	if _, exists := s.urls[id]; exists {
+		return false, nil
+	}
 	s.urls[id] = originalURL
-	return id
+	return true, nil
 }
 
 func (s *MemoryStorage) Get(id string) (string, bool) {

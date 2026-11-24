@@ -7,6 +7,7 @@ import (
 	"github.com/ya-lobur/go-url-shortener/internal/config"
 	"github.com/ya-lobur/go-url-shortener/internal/handler"
 	"github.com/ya-lobur/go-url-shortener/internal/repository"
+	"github.com/ya-lobur/go-url-shortener/internal/service"
 )
 
 func main() {
@@ -18,5 +19,5 @@ func main() {
 
 func run(cfg config.Config) error {
 	storage := repository.NewMemoryStorage()
-	return http.ListenAndServe(cfg.HTTP.RunAddr, handler.New(storage, cfg.Handler))
+	return http.ListenAndServe(cfg.HTTP.RunAddr, handler.New(service.New(storage), cfg.Handler))
 }

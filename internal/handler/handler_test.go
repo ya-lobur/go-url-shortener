@@ -13,9 +13,11 @@ import (
 
 	"github.com/ya-lobur/go-url-shortener/internal/config"
 	"github.com/ya-lobur/go-url-shortener/internal/handler"
+	"github.com/ya-lobur/go-url-shortener/internal/service"
 )
 
-type storageStub struct {
+type serviceStub struct {
+	err      error
 	id       string
 	original string
 	found    bool
@@ -23,12 +25,12 @@ type storageStub struct {
 	lookedUp []string
 }
 
-func (s *storageStub) Save(original string) string {
+func (s *serviceStub) Shorten(original string) (string, error) {
 	s.saved = append(s.saved, original)
-	return s.id
+	return s.id, s.err
 }
 
-func (s *storageStub) Get(id string) (string, bool) {
+func (s *serviceStub) Resolve(id string) (string, bool) {
 	s.lookedUp = append(s.lookedUp, id)
 	return s.original, s.found
 }
@@ -49,7 +51,7 @@ func TestHandler_Shorten(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			storage := &storageStub{id: "abc123"}
+			storage := &serviceStub{id: "abc123"}
 			request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(tt.original))
 			request.Header.Set("Content-Type", tt.contentType)
 			recorder := httptest.NewRecorder()
@@ -78,19 +80,10 @@ func TestHandler_InvalidShorten(t *testing.T) {
 		{"missing_content_type", "https://example.com/", ""},
 		{"wrong_content_type", "https://example.com/", "application/json"},
 		{"malformed_content_type", "https://example.com/", "text/plain; charset"},
-		{"empty_body", "", "text/plain"},
-		{"invalid_url", "not-a-url", "text/plain"},
-		{"relative_url", "/relative", "text/plain"},
-		{"unsupported_scheme", "ftp://example.com/file", "text/plain"},
-		{"missing_host", "https:///path", "text/plain"},
-		{"space", "https://example.com/a b", "text/plain"},
-		{"tab", "https://example.com/\t", "text/plain"},
-		{"carriage_return", "https://example.com/\r", "text/plain"},
-		{"newline", "https://example.com/\n", "text/plain"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			storage := &storageStub{}
+			storage := &serviceStub{}
 			request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(tt.body))
 			if tt.contentType != "" {
 				request.Header.Set("Content-Type", tt.contentType)
@@ -115,7 +108,7 @@ func (failingBody) Read([]byte) (int, error) {
 func (failingBody) Close() error { return nil }
 
 func TestHandler_BodyReadError(t *testing.T) {
-	storage := &storageStub{}
+	storage := &serviceStub{}
 	request := httptest.NewRequest(http.MethodPost, "/", nil)
 	request.Header.Set("Content-Type", "text/plain")
 	request.Body = failingBody{}
@@ -141,7 +134,7 @@ func TestHandler_Redirect(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			storage := &storageStub{original: tt.original, found: true}
+			storage := &serviceStub{original: tt.original, found: true}
 			request := httptest.NewRequest(http.MethodGet, tt.path, nil)
 			recorder := httptest.NewRecorder()
 
@@ -161,7 +154,7 @@ func TestHandler_Redirect(t *testing.T) {
 }
 
 func TestHandler_UnknownID(t *testing.T) {
-	storage := &storageStub{}
+	storage := &serviceStub{}
 	request := httptest.NewRequest(http.MethodGet, "/unknown", nil)
 	recorder := httptest.NewRecorder()
 
@@ -193,7 +186,7 @@ func TestHandler_InvalidRoute(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
-			storage := &storageStub{}
+			storage := &serviceStub{}
 			request := httptest.NewRequest(tt.method, tt.path, strings.NewReader("https://example.com/"))
 			request.Header.Set("Content-Type", "text/plain")
 			recorder := httptest.NewRecorder()
@@ -219,4 +212,26 @@ func assertBadRequest(t *testing.T, recorder *httptest.ResponseRecorder) {
 	assert.Equal(t, "text/plain; charset=utf-8", response.Header.Get("Content-Type"))
 	assert.NotEmpty(t, body)
 	assert.Empty(t, response.Header.Get("Location"))
+}
+
+func TestHandler_ServiceError(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{"invalid_url", service.ErrInvalidURL, http.StatusBadRequest},
+		{"storage_failure", errors.New("storage unavailable"), http.StatusInternalServerError},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &serviceStub{err: tt.err}
+			request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("https://example.com/"))
+			request.Header.Set("Content-Type", "text/plain")
+			recorder := httptest.NewRecorder()
+			handler.New(svc, config.HandlerConfig{BaseURL: "http://localhost:8080"}).ServeHTTP(recorder, request)
+			require.Equal(t, tt.status, recorder.Code)
+			require.Empty(t, recorder.Header().Get("Location"))
+			require.NotContains(t, recorder.Body.String(), "storage unavailable")
+		})
+	}
 }

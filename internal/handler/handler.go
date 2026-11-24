@@ -1,30 +1,30 @@
 package handler
 
 import (
+	"errors"
 	"io"
 	"log"
 	"mime"
 	"net/http"
-	"net/url"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/ya-lobur/go-url-shortener/internal/config"
+	"github.com/ya-lobur/go-url-shortener/internal/service"
 )
 
-// Storage provides the URL mappings used by the HTTP handlers.
-type Storage interface {
-	Save(originalURL string) string
-	Get(id string) (string, bool)
+// Service provides URL shortening and resolution for the HTTP handlers.
+type Service interface {
+	Shorten(string) (string, error)
+	Resolve(string) (string, bool)
 }
 
 type Handler struct {
-	storage Storage
+	service Service
 	baseURL string
 }
 
-func New(storage Storage, cfg config.HandlerConfig) http.Handler {
-	h := &Handler{storage: storage, baseURL: cfg.BaseURL}
+func New(service Service, cfg config.HandlerConfig) http.Handler {
+	h := &Handler{service: service, baseURL: cfg.BaseURL}
 	router := chi.NewRouter()
 	router.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -58,13 +58,16 @@ func (h *Handler) shorten(w http.ResponseWriter, r *http.Request) {
 	}
 
 	originalURL := string(body)
-	parsed, err := url.ParseRequestURI(originalURL)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || strings.ContainsAny(originalURL, " \t\r\n") {
-		http.Error(w, "invalid URL", http.StatusBadRequest)
+	id, err := h.service.Shorten(originalURL)
+	if err != nil {
+		if errors.Is(err, service.ErrInvalidURL) {
+			http.Error(w, "invalid URL", http.StatusBadRequest)
+		} else {
+			log.Printf("shorten URL: %v", err)
+			http.Error(w, "cannot shorten URL", http.StatusInternalServerError)
+		}
 		return
 	}
-
-	id := h.storage.Save(originalURL)
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusCreated)
 	if _, err := io.WriteString(w, h.baseURL+"/"+id); err != nil {
@@ -73,7 +76,7 @@ func (h *Handler) shorten(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) redirect(w http.ResponseWriter, r *http.Request) {
-	originalURL, ok := h.storage.Get(chi.URLParam(r, "id"))
+	originalURL, ok := h.service.Resolve(chi.URLParam(r, "id"))
 	if !ok {
 		http.Error(w, "unknown URL identifier", http.StatusBadRequest)
 		return
