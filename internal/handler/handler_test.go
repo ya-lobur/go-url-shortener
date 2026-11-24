@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ya-lobur/go-url-shortener/internal/config"
 	"github.com/ya-lobur/go-url-shortener/internal/handler"
 )
 
@@ -53,7 +54,7 @@ func TestHandler_Shorten(t *testing.T) {
 			request.Header.Set("Content-Type", tt.contentType)
 			recorder := httptest.NewRecorder()
 
-			handler.New(storage, tt.baseURL).ServeHTTP(recorder, request)
+			handler.New(storage, config.HandlerConfig{BaseURL: tt.baseURL}).ServeHTTP(recorder, request)
 
 			response := recorder.Result()
 			defer response.Body.Close()
@@ -96,7 +97,7 @@ func TestHandler_InvalidShorten(t *testing.T) {
 			}
 			recorder := httptest.NewRecorder()
 
-			handler.New(storage, "http://localhost:8080").ServeHTTP(recorder, request)
+			handler.New(storage, config.HandlerConfig{BaseURL: "http://localhost:8080"}).ServeHTTP(recorder, request)
 
 			assertBadRequest(t, recorder)
 			assert.Empty(t, storage.saved)
@@ -120,7 +121,7 @@ func TestHandler_BodyReadError(t *testing.T) {
 	request.Body = failingBody{}
 	recorder := httptest.NewRecorder()
 
-	handler.New(storage, "http://localhost:8080").ServeHTTP(recorder, request)
+	handler.New(storage, config.HandlerConfig{BaseURL: "http://localhost:8080"}).ServeHTTP(recorder, request)
 
 	assertBadRequest(t, recorder)
 	assert.Empty(t, storage.saved)
@@ -144,7 +145,7 @@ func TestHandler_Redirect(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, tt.path, nil)
 			recorder := httptest.NewRecorder()
 
-			handler.New(storage, "http://localhost:8080").ServeHTTP(recorder, request)
+			handler.New(storage, config.HandlerConfig{BaseURL: "http://localhost:8080"}).ServeHTTP(recorder, request)
 
 			response := recorder.Result()
 			defer response.Body.Close()
@@ -164,7 +165,7 @@ func TestHandler_UnknownID(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/unknown", nil)
 	recorder := httptest.NewRecorder()
 
-	handler.New(storage, "http://localhost:8080").ServeHTTP(recorder, request)
+	handler.New(storage, config.HandlerConfig{BaseURL: "http://localhost:8080"}).ServeHTTP(recorder, request)
 
 	assertBadRequest(t, recorder)
 	assert.Equal(t, []string{"unknown"}, storage.lookedUp)
@@ -197,7 +198,7 @@ func TestHandler_InvalidRoute(t *testing.T) {
 			request.Header.Set("Content-Type", "text/plain")
 			recorder := httptest.NewRecorder()
 
-			handler.New(storage, "http://localhost:8080").ServeHTTP(recorder, request)
+			handler.New(storage, config.HandlerConfig{BaseURL: "http://localhost:8080"}).ServeHTTP(recorder, request)
 
 			assertBadRequest(t, recorder)
 			assert.Equal(t, "invalid method or path\n", recorder.Body.String())

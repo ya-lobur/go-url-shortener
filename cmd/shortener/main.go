@@ -18,5 +18,5 @@ func main() {
 
 func run(cfg config.Config) error {
 	storage := repository.NewMemoryStorage()
-	return http.ListenAndServe(cfg.RunAddr, handler.New(storage, cfg.BaseURL))
+	return http.ListenAndServe(cfg.HTTP.RunAddr, handler.New(storage, cfg.Handler))
 }

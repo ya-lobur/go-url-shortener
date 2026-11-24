@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/ya-lobur/go-url-shortener/internal/config"
 )
 
 // Storage provides the URL mappings used by the HTTP handlers.
@@ -22,8 +23,8 @@ type Handler struct {
 	baseURL string
 }
 
-func New(storage Storage, baseURL string) http.Handler {
-	h := &Handler{storage: storage, baseURL: baseURL}
+func New(storage Storage, cfg config.HandlerConfig) http.Handler {
+	h := &Handler{storage: storage, baseURL: cfg.BaseURL}
 	router := chi.NewRouter()
 	router.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
