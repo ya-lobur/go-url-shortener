@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	cfg := config.ParseFlags()
+	cfg := config.Parse()
 	if err := run(cfg); err != nil {
 		log.Fatal(err)
 	}
