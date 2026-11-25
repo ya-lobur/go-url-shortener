@@ -1,3 +1,23 @@
 package main
 
-func main() {}
+import (
+	"log"
+	"net/http"
+
+	"github.com/ya-lobur/go-url-shortener/internal/config"
+	"github.com/ya-lobur/go-url-shortener/internal/handler"
+	"github.com/ya-lobur/go-url-shortener/internal/repository"
+	"github.com/ya-lobur/go-url-shortener/internal/service"
+)
+
+func main() {
+	cfg := config.ParseFlags()
+	if err := run(cfg); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run(cfg config.Config) error {
+	storage := repository.NewMemoryStorage()
+	return http.ListenAndServe(cfg.HTTP.RunAddr, handler.New(service.New(storage), cfg.Handler))
+}
