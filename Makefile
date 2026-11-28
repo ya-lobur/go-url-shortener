@@ -9,7 +9,7 @@ help:
 	@printf '%s\n' \
 		'make run    — запустить сервис (RUN_ADDR=localhost:8080, BASE_URL=http://localhost:8080)' \
 		'make build  — собрать cmd/shortener/shortener' \
-		'make fmt    — отформатировать Go-файлы' \
+		'make fmt    — отформатировать Go-файлы и упорядочить импорты через goimports' \
 		'make test   — проверить пакеты и запустить существующие тесты' \
 		'make vet    — выполнить статический анализ' \
 		'make check  — выполнить build, test и vet' \
@@ -26,7 +26,7 @@ run:
 	go run ./cmd/shortener -a "$(RUN_ADDR)" -b "$(BASE_URL)"
 
 fmt:
-	gofmt -w .
+	goimports -w .
 
 test:
 	go test ./...
