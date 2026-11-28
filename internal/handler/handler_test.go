@@ -7,14 +7,70 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/ya-lobur/go-url-shortener/internal/config"
 	"github.com/ya-lobur/go-url-shortener/internal/handler"
+	"github.com/ya-lobur/go-url-shortener/internal/middleware"
 	"github.com/ya-lobur/go-url-shortener/internal/service"
 )
+
+func TestLoggingMiddleware(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		handle http.HandlerFunc
+		status int
+		body   string
+	}{
+		{"empty", func(w http.ResponseWriter, r *http.Request) {}, http.StatusOK, ""},
+		{"implicit_ok_multiple_writes", func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("Go "))
+			_, _ = w.Write([]byte("Привет"))
+		}, http.StatusOK, "Go Привет"},
+		{"explicit_status", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte("created"))
+		}, http.StatusCreated, "created"},
+		{"repeated_status", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusAccepted)
+			w.WriteHeader(http.StatusInternalServerError)
+		}, http.StatusAccepted, ""},
+		{"status_after_body", func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("ok"))
+			w.WriteHeader(http.StatusBadRequest)
+		}, http.StatusOK, "ok"},
+		{"error", func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+		}, http.StatusBadRequest, "invalid request\n"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			core, logs := observer.New(zapcore.DebugLevel)
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "/?check=1", nil)
+			middleware.RequestLogger(zap.New(core))(tt.handle).ServeHTTP(recorder, request)
+
+			require.Equal(t, tt.status, recorder.Code)
+			require.Equal(t, tt.body, recorder.Body.String())
+			require.Equal(t, 1, logs.Len())
+			entry := logs.All()[0]
+			require.Equal(t, zapcore.InfoLevel, entry.Level)
+			fields := entry.ContextMap()
+			assert.Equal(t, "/?check=1", fields["uri"])
+			assert.Equal(t, http.MethodPost, fields["method"])
+			assert.EqualValues(t, tt.status, fields["status"])
+			assert.EqualValues(t, len(tt.body), fields["size"])
+			duration, ok := fields["duration"].(time.Duration)
+			require.True(t, ok)
+			assert.GreaterOrEqual(t, duration, time.Duration(0))
+		})
+	}
+}
 
 type serviceStub struct {
 	err      error
@@ -58,7 +114,7 @@ func TestHandler_Shorten(t *testing.T) {
 			request.Header.Set("Content-Type", tt.contentType)
 			recorder := httptest.NewRecorder()
 
-			handler.New(storage, config.HandlerConfig{BaseURL: tt.baseURL}).ServeHTTP(recorder, request)
+			handler.New(storage, config.HandlerConfig{BaseURL: tt.baseURL}, zap.NewNop()).ServeHTTP(recorder, request)
 
 			response := recorder.Result()
 			defer response.Body.Close()
@@ -92,7 +148,7 @@ func TestHandler_InvalidShorten(t *testing.T) {
 			}
 			recorder := httptest.NewRecorder()
 
-			handler.New(storage, config.HandlerConfig{BaseURL: "http://localhost:8080"}).ServeHTTP(recorder, request)
+			handler.New(storage, config.HandlerConfig{BaseURL: "http://localhost:8080"}, zap.NewNop()).ServeHTTP(recorder, request)
 
 			assertBadRequest(t, recorder)
 			assert.Empty(t, storage.saved)
@@ -116,7 +172,7 @@ func TestHandler_BodyReadError(t *testing.T) {
 	request.Body = failingBody{}
 	recorder := httptest.NewRecorder()
 
-	handler.New(storage, config.HandlerConfig{BaseURL: "http://localhost:8080"}).ServeHTTP(recorder, request)
+	handler.New(storage, config.HandlerConfig{BaseURL: "http://localhost:8080"}, zap.NewNop()).ServeHTTP(recorder, request)
 
 	assertBadRequest(t, recorder)
 	assert.Empty(t, storage.saved)
@@ -140,7 +196,7 @@ func TestHandler_Redirect(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, tt.path, nil)
 			recorder := httptest.NewRecorder()
 
-			handler.New(storage, config.HandlerConfig{BaseURL: "http://localhost:8080"}).ServeHTTP(recorder, request)
+			handler.New(storage, config.HandlerConfig{BaseURL: "http://localhost:8080"}, zap.NewNop()).ServeHTTP(recorder, request)
 
 			response := recorder.Result()
 			defer response.Body.Close()
@@ -160,7 +216,7 @@ func TestHandler_UnknownID(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/unknown", nil)
 	recorder := httptest.NewRecorder()
 
-	handler.New(storage, config.HandlerConfig{BaseURL: "http://localhost:8080"}).ServeHTTP(recorder, request)
+	handler.New(storage, config.HandlerConfig{BaseURL: "http://localhost:8080"}, zap.NewNop()).ServeHTTP(recorder, request)
 
 	assertBadRequest(t, recorder)
 	assert.Equal(t, []string{"unknown"}, storage.lookedUp)
@@ -193,7 +249,7 @@ func TestHandler_InvalidRoute(t *testing.T) {
 			request.Header.Set("Content-Type", "text/plain")
 			recorder := httptest.NewRecorder()
 
-			handler.New(storage, config.HandlerConfig{BaseURL: "http://localhost:8080"}).ServeHTTP(recorder, request)
+			handler.New(storage, config.HandlerConfig{BaseURL: "http://localhost:8080"}, zap.NewNop()).ServeHTTP(recorder, request)
 
 			assertBadRequest(t, recorder)
 			assert.Equal(t, "invalid method or path\n", recorder.Body.String())
@@ -230,7 +286,7 @@ func TestHandler_ServiceError(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("https://example.com/"))
 			request.Header.Set("Content-Type", "text/plain")
 			recorder := httptest.NewRecorder()
-			handler.New(svc, config.HandlerConfig{BaseURL: "http://localhost:8080"}).ServeHTTP(recorder, request)
+			handler.New(svc, config.HandlerConfig{BaseURL: "http://localhost:8080"}, zap.NewNop()).ServeHTTP(recorder, request)
 			require.Equal(t, tt.status, recorder.Code)
 			require.Empty(t, recorder.Header().Get("Location"))
 			require.NotContains(t, recorder.Body.String(), "storage unavailable")
@@ -247,7 +303,7 @@ func TestHandler_PercentID(t *testing.T) {
 		t.Run(tt.path, func(t *testing.T) {
 			svc := &serviceStub{original: "https://example.com/", found: true}
 			recorder := httptest.NewRecorder()
-			handler.New(svc, config.HandlerConfig{BaseURL: "http://localhost:8080"}).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, tt.path, nil))
+			handler.New(svc, config.HandlerConfig{BaseURL: "http://localhost:8080"}, zap.NewNop()).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, tt.path, nil))
 			require.Equal(t, http.StatusTemporaryRedirect, recorder.Code)
 			require.Equal(t, []string{tt.id}, svc.lookedUp)
 		})

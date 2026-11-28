@@ -3,13 +3,14 @@ package handler
 import (
 	"errors"
 	"io"
-	"log"
 	"mime"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"go.uber.org/zap"
+
 	"github.com/ya-lobur/go-url-shortener/internal/config"
 	"github.com/ya-lobur/go-url-shortener/internal/service"
 )
@@ -23,10 +24,11 @@ type Service interface {
 type Handler struct {
 	service Service
 	baseURL string
+	logger  *zap.Logger
 }
 
-func New(service Service, cfg config.HandlerConfig) http.Handler {
-	h := &Handler{service: service, baseURL: strings.TrimRight(cfg.BaseURL, "/")}
+func New(service Service, cfg config.HandlerConfig, logger *zap.Logger) http.Handler {
+	h := &Handler{service: service, baseURL: strings.TrimRight(cfg.BaseURL, "/"), logger: logger}
 	router := chi.NewRouter()
 	router.Post("/", h.shorten)
 	router.Get("/{id}", h.redirect)
@@ -58,7 +60,7 @@ func (h *Handler) shorten(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, service.ErrInvalidURL) {
 			http.Error(w, "invalid URL", http.StatusBadRequest)
 		} else {
-			log.Printf("shorten URL: %v", err)
+			h.logger.Info("Failed to shorten URL", zap.Error(err))
 			http.Error(w, "cannot shorten URL", http.StatusInternalServerError)
 		}
 		return
@@ -66,7 +68,7 @@ func (h *Handler) shorten(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusCreated)
 	if _, err := io.WriteString(w, h.baseURL+"/"+id); err != nil {
-		log.Printf("write shortened URL: %v", err)
+		h.logger.Info("Failed to write shortened URL", zap.Error(err))
 	}
 }
 
